@@ -1,23 +1,16 @@
-use std::sync::Arc;
+use anyhow::Result;
 use axum::{
-    routing::{post, get},
-    Router,
-    Json,
     extract::State,
+    routing::{get, post},
+    Json, Router,
 };
 use qdrant_client::prelude::*;
-use qdrant_client::qdrant::{
-    vectors_config::Config,
-    VectorParams,
-    VectorsConfig,
-    Distance,
-};
+use qdrant_client::qdrant::{vectors_config::Config, Distance, VectorParams, VectorsConfig};
 use rust_bert::pipelines::sentence_embeddings::{
-    SentenceEmbeddingsModel,
-    SentenceEmbeddingsBuilder,
+    SentenceEmbeddingsBuilder, SentenceEmbeddingsModel,
 };
-use serde::{Serialize, Deserialize};
-use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 // Request/Response structs
 #[derive(Deserialize)]
@@ -168,4 +161,3 @@ async fn search(
         Err(_) => Json(vec![]),
     }
 }
-
