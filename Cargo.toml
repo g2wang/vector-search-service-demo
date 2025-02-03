@@ -9,8 +9,12 @@ tokio = { version = "1.43", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 qdrant-client = "1.13"
-rust-bert = "0.23"
 anyhow = "1.0"
 tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
+uuid = { version = "1.12.1", features = ["v4", "fast-rng", "macro-diagnostics"] }
+fastembed = "4.4.0"
+
+[build-dependencies]
+cc = "1.2.11"

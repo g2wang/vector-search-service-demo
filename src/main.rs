@@ -1,19 +1,20 @@
 use anyhow::Result;
-use axum::{
-    extract::State,
-    routing::{get, post},
-    Json, Router,
+use axum::{extract::State, routing::post, Json, Router};
+use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+use qdrant_client::qdrant::{
+    vectors_config::Config, CreateCollectionBuilder, Distance, ScalarQuantizationBuilder,
+    SearchParamsBuilder, SearchPointsBuilder, UpsertPointsBuilder, VectorParams,
+    VectorParamsBuilder, VectorsConfig,
 };
-use qdrant_client::prelude::*;
-use qdrant_client::qdrant::{vectors_config::Config, Distance, VectorParams, VectorsConfig};
-use rust_bert::pipelines::sentence_embeddings::{
-    SentenceEmbeddingsBuilder, SentenceEmbeddingsModel,
-};
+use qdrant_client::{qdrant::PointStruct, Payload, Qdrant};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::sync::Arc;
 
-// Request/Response structs
-#[derive(Deserialize)]
+const COLLECTION_NAME: &str = "tips";
+const VECTOR_SIZE: u64 = 384; // all-MiniLM-L6-v2 embedding Size: 384 dimensions
+                              // Request/Response structs
+#[derive(Deserialize, Serialize)]
 struct AddTipRequest {
     text: String,
 }
@@ -26,8 +27,8 @@ struct SearchResponse {
 
 // App state
 struct AppState {
-    qdrant_client: QdrantClient,
-    embedding_model: SentenceEmbeddingsModel,
+    qdrant_client: Qdrant,
+    embedding_model: TextEmbedding,
 }
 
 #[tokio::main]
@@ -35,38 +36,29 @@ async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
+    // Initialize the embedding model
+    let embedding_model = TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6V2))?;
+
     // Initialize Qdrant client
-    let qdrant_client = QdrantClient::from_url("http://localhost:6334").await?;
+    let qdrant_client = Qdrant::from_url("http://localhost:6334").build()?;
 
     // Create collection if it doesn't exist
-    let collection_name = "tips";
-    let vector_size = 768; // MPNet embedding size
 
     let vectors_config = VectorsConfig {
         config: Some(Config::Params(VectorParams {
-            size: vector_size,
+            size: VECTOR_SIZE,
             distance: Distance::Cosine.into(),
             ..Default::default()
         })),
     };
 
-    match qdrant_client
-        .create_collection(&CreateCollection {
-            collection_name: collection_name.to_string(),
-            vectors_config: Some(vectors_config),
-            ..Default::default()
-        })
-        .await
-    {
-        Ok(_) => println!("Collection created successfully"),
-        Err(e) => println!("Collection creation error (might already exist): {}", e),
-    }
-
-    // Initialize MPNet model
-    let embedding_model = SentenceEmbeddingsBuilder::remote(
-        rust_bert::pipelines::sentence_embeddings::SentenceEmbeddingsModelType::MPNet,
-    )
-    .create_model()?;
+    qdrant_client
+        .create_collection(
+            CreateCollectionBuilder::new(COLLECTION_NAME)
+                .vectors_config(VectorParamsBuilder::new(VECTOR_SIZE, Distance::Cosine))
+                .quantization_config(ScalarQuantizationBuilder::default()),
+        )
+        .await?;
 
     // Create app state
     let state = Arc::new(AppState {
@@ -91,26 +83,29 @@ async fn main() -> Result<()> {
 // Handler for adding tips
 async fn add_tip(
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<AddTipRequest>,
+    Json(add_tip_request): Json<AddTipRequest>,
 ) -> Json<serde_json::Value> {
     // Generate embedding
-    let embedding = state.embedding_model.encode(&[&payload.text]).unwrap();
+    let embedding = state
+        .embedding_model
+        .embed(vec![&add_tip_request.text], None)
+        .unwrap();
     let embedding_vec = embedding[0].to_vec();
 
-    // Add point to Qdrant
-    let point = PointStruct::new(
+    let payload: Payload = json!(add_tip_request).try_into().unwrap();
+    let points = vec![PointStruct::new(
         uuid::Uuid::new_v4().to_string(),
         embedding_vec,
-        payload.text.clone(),
-    );
+        payload,
+    )];
 
     match state
         .qdrant_client
-        .upsert_points("tips", vec![point], None)
+        .upsert_points(UpsertPointsBuilder::new(COLLECTION_NAME, points))
         .await
     {
-        Ok(_) => Json(serde_json::json!({ "status": "success" })),
-        Err(e) => Json(serde_json::json!({
+        Ok(_) => Json(json!({ "status": "success" })),
+        Err(e) => Json(json!({
             "status": "error",
             "message": e.to_string()
         })),
@@ -120,22 +115,23 @@ async fn add_tip(
 // Handler for searching tips
 async fn search(
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<AddTipRequest>,
+    Json(add_tip_request): Json<AddTipRequest>,
 ) -> Json<Vec<SearchResponse>> {
     // Generate embedding for search query
-    let embedding = state.embedding_model.encode(&[&payload.text]).unwrap();
+    let embedding = state
+        .embedding_model
+        .embed(vec![&add_tip_request.text], None)
+        .unwrap();
     let embedding_vec = embedding[0].to_vec();
 
     // Search in Qdrant
     let search_result = state
         .qdrant_client
-        .search_points(&SearchPoints {
-            collection_name: "tips".to_string(),
-            vector: embedding_vec,
-            limit: 1,
-            with_payload: Some(true.into()),
-            ..Default::default()
-        })
+        .search_points(
+            SearchPointsBuilder::new(COLLECTION_NAME, embedding_vec, VECTOR_SIZE)
+                .with_payload(true)
+                .params(SearchParamsBuilder::default().exact(true)),
+        )
         .await;
 
     match search_result {
@@ -148,7 +144,7 @@ async fn search(
                         .payload
                         .get("text")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("")
+                        .unwrap_or(&"".to_owned())
                         .to_string();
                     SearchResponse {
                         text,
