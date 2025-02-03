@@ -2,9 +2,8 @@ use anyhow::Result;
 use axum::{extract::State, routing::post, Json, Router};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use qdrant_client::qdrant::{
-    vectors_config::Config, CreateCollectionBuilder, Distance, ScalarQuantizationBuilder,
-    SearchParamsBuilder, SearchPointsBuilder, UpsertPointsBuilder, VectorParams,
-    VectorParamsBuilder, VectorsConfig,
+    CreateCollectionBuilder, Distance, ScalarQuantizationBuilder, SearchParamsBuilder,
+    SearchPointsBuilder, UpsertPointsBuilder, VectorParamsBuilder,
 };
 use qdrant_client::{qdrant::PointStruct, Payload, Qdrant};
 use serde::{Deserialize, Serialize};
@@ -13,7 +12,8 @@ use std::sync::Arc;
 
 const COLLECTION_NAME: &str = "tips";
 const VECTOR_SIZE: u64 = 384; // all-MiniLM-L6-v2 embedding Size: 384 dimensions
-                              // Request/Response structs
+
+// Request/Response structs
 #[derive(Deserialize, Serialize)]
 struct AddTipRequest {
     text: String,
@@ -40,17 +40,7 @@ async fn main() -> Result<()> {
     let embedding_model = TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6V2))?;
 
     // Initialize Qdrant client
-    let qdrant_client = Qdrant::from_url("http://localhost:6334").build()?;
-
-    // Create collection if it doesn't exist
-
-    let vectors_config = VectorsConfig {
-        config: Some(Config::Params(VectorParams {
-            size: VECTOR_SIZE,
-            distance: Distance::Cosine.into(),
-            ..Default::default()
-        })),
-    };
+    let qdrant_client = Qdrant::from_url("http://localhost:6333").build()?;
 
     qdrant_client
         .create_collection(
