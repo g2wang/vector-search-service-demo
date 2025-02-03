@@ -42,13 +42,22 @@ async fn main() -> Result<()> {
     // Initialize Qdrant client
     let qdrant_client = Qdrant::from_url("http://localhost:6334").build()?;
 
-    qdrant_client
-        .create_collection(
-            CreateCollectionBuilder::new(COLLECTION_NAME)
-                .vectors_config(VectorParamsBuilder::new(VECTOR_SIZE, Distance::Cosine))
-                .quantization_config(ScalarQuantizationBuilder::default()),
-        )
-        .await?;
+    let exists = qdrant_client.collection_exists(COLLECTION_NAME).await?;
+    if exists {
+        println!(
+            "'{}' collection already exists in Qdrant; do not create",
+            COLLECTION_NAME
+        );
+    } else {
+        qdrant_client
+            .create_collection(
+                CreateCollectionBuilder::new(COLLECTION_NAME)
+                    .vectors_config(VectorParamsBuilder::new(VECTOR_SIZE, Distance::Cosine))
+                    .quantization_config(ScalarQuantizationBuilder::default()),
+            )
+            .await?;
+        println!("created collection '{}' in Qdrant", COLLECTION_NAME);
+    }
 
     // Create app state
     let state = Arc::new(AppState {
