@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
     let embedding_model = TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6V2))?;
 
     // Initialize Qdrant client
-    let qdrant_client = Qdrant::from_url("http://localhost:6333").build()?;
+    let qdrant_client = Qdrant::from_url("http://localhost:6334").build()?;
 
     qdrant_client
         .create_collection(
