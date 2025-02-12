@@ -90,6 +90,7 @@ async fn add_tip(
         .embed(vec![&add_tip_request.text], None)
         .unwrap();
     let embedding_vec = embedding[0].to_vec();
+    println!("embedding_vec: {:?}", embedding_vec);
 
     let payload: Payload = json!(add_tip_request).try_into().unwrap();
     let points = vec![PointStruct::new(
@@ -129,7 +130,8 @@ async fn search(
         .search_points(
             SearchPointsBuilder::new(COLLECTION_NAME, embedding_vec, VECTOR_SIZE)
                 .with_payload(true)
-                .params(SearchParamsBuilder::default().exact(true)),
+                .params(SearchParamsBuilder::default().exact(true))
+                .limit(1),
         )
         .await;
 
