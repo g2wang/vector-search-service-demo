@@ -11,7 +11,9 @@ pub fn embed(text: &str, embedding_model: &TextEmbedding, tokenizer: &Tokenizer)
         .iter()
         .map(|s| embed_a_chunk(s, embedding_model).unwrap())
         .collect();
-    vector_mean::mean(embedding)
+    let weights: Vec<f32> = chunks.iter().map(|s| s.len() as f32).collect();
+
+    vector_mean::mean(embedding, weights)
 }
 
 fn embed_a_chunk(text: &str, embedding_model: &TextEmbedding) -> Result<Vec<f32>> {

@@ -1,4 +1,5 @@
-use ndarray::{Array2, Axis};
+use ndarray::{Array, Array2, Axis};
+use ndarray_stats::SummaryStatisticsExt;
 
 // Example embeddings: a vector of vectors
 // let embeddings: Vec<Vec<f32>> = vec![
@@ -7,7 +8,7 @@ use ndarray::{Array2, Axis};
 //     vec![0.7, 0.8, 0.9],
 //     // Add more embeddings as needed
 // ];
-pub fn mean(embeddings: Vec<Vec<f32>>) -> Vec<f32> {
+pub fn mean(embeddings: Vec<Vec<f32>>, weights: Vec<f32>) -> Vec<f32> {
     // Convert Vec<Vec<f32>> to a 2D ndarray
     let num_embeddings = embeddings.len();
     let embedding_dim = embeddings[0].len();
@@ -15,8 +16,10 @@ pub fn mean(embeddings: Vec<Vec<f32>>) -> Vec<f32> {
     let array = Array2::from_shape_vec((num_embeddings, embedding_dim), flat_embeddings)
         .expect("Error creating ndarray");
 
-    // Compute the mean along the first axis (i.e., average over all embeddings)
-    let mean_embedding = array.mean_axis(Axis(0)).expect("Error computing mean");
+    let weights = Array::from_vec(weights);
+    let mean_embedding = array
+        .weighted_mean_axis(Axis(0), &weights)
+        .expect("Error computing mean");
 
     // `mean_embedding` is a 1D array representing the average embedding
     let (v, _) = mean_embedding.into_raw_vec_and_offset();

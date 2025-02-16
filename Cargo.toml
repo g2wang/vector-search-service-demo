@@ -22,3 +22,4 @@ fastembed = "4.4.0"
 tokenizers = "0.21.0"
 ndarray = "0.16.1"
 text-splitter = { version = "0.24.0", features = ["tokenizers"] }
+ndarray-stats = "0.6.0"
