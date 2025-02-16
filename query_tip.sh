@@ -2,5 +2,5 @@
 
 curl -X POST http://localhost:3000/search \
   -H "Content-Type: application/json" \
-  -d '{"text": "Tell me about cargo buid script"}'
+  -d '{"text": "How to deal with snow"}'
 

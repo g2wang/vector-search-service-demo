@@ -48,20 +48,19 @@ async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
+    let base_path = PathBuf::from("all-MiniLM-L6-v2");
     // Define paths to your local files
-    let onnx_path = PathBuf::from("all-MiniLM-L6-v2-model.onnx");
-    // let vocab_path = PathBuf::from("all-MiniLM-L6-v2-vocab.txt");
-    let tokenizer_path = PathBuf::from("all-MiniLM-L6-v2-tokenizer.json");
-    let config_path = PathBuf::from("all-MiniLM-L6-v2-config.json");
-    let special_tokens_map_path = PathBuf::from("all-MiniLM-L6-v2-special_tokens_map.json");
-    let tokenizer_config_path = PathBuf::from("all-MiniLM-L6-v2-tokenizer_config.json");
+    let onnx_path = base_path.join("onnx").join("model.onnx");
+    let tokenizer_path = base_path.join("tokenizer.json");
+    let config_path = base_path.join("config.json");
+    let special_tokens_map_path = base_path.join("special_tokens_map.json");
+    let tokenizer_config_path = base_path.join("tokenizer_config.json");
 
     // Read the ONNX model file into bytes
     let onnx_bytes = read_file_to_bytes(&onnx_path)?;
     let tokenizer_file = read_file_to_bytes(&tokenizer_path)?;
     let config_file = read_file_to_bytes(&config_path)?;
     let special_tokens_map_file = read_file_to_bytes(&special_tokens_map_path)?;
-
     let tokenizer_config_file = read_file_to_bytes(&tokenizer_config_path)?;
     let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
 
