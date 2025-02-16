@@ -19,6 +19,6 @@ uuid = { version = "1.12.1", features = [
   "macro-diagnostics",
 ] }
 fastembed = "4.4.0"
-tokenizers = { version = "0.21.0", features = ["http"] }
+tokenizers = "0.21.0"
 ndarray = "0.16.1"
 text-splitter = { version = "0.24.0", features = ["tokenizers"] }
