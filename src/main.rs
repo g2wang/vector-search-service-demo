@@ -4,7 +4,6 @@ mod vector_mean;
 
 use anyhow::Result;
 use axum::{extract::State, routing::post, Json, Router};
-use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use qdrant_client::qdrant::{
     CreateCollectionBuilder, Distance, ScalarQuantizationBuilder, SearchParamsBuilder,
     SearchPointsBuilder, UpsertPointsBuilder, VectorParamsBuilder,
@@ -14,6 +13,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 use tokenizers::tokenizer::Tokenizer;
+
+use std::path::PathBuf;
+
+use fastembed::{
+    read_file_to_bytes, InitOptionsUserDefined, Pooling, TextEmbedding, TokenizerFiles,
+    UserDefinedEmbeddingModel,
+};
 
 const COLLECTION_NAME: &str = "tips";
 const VECTOR_SIZE: u64 = 384; // all-MiniLM-L6-v2 embedding Size: 384 dimensions
@@ -42,8 +48,37 @@ async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
-    // Initialize the embedding model
-    let embedding_model = TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6V2))?;
+    // Define paths to your local files
+    let onnx_path = PathBuf::from("all-MiniLM-L6-v2-model.onnx");
+    // let vocab_path = PathBuf::from("all-MiniLM-L6-v2-vocab.txt");
+    let tokenizer_path = PathBuf::from("all-MiniLM-L6-v2-tokenizer.json");
+    let config_path = PathBuf::from("all-MiniLM-L6-v2-config.json");
+    let special_tokens_map_path = PathBuf::from("all-MiniLM-L6-v2-special_tokens_map.json");
+    let tokenizer_config_path = PathBuf::from("all-MiniLM-L6-v2-tokenizer_config.json");
+
+    // Read the ONNX model file into bytes
+    let onnx_bytes = read_file_to_bytes(&onnx_path)?;
+    let tokenizer_file = read_file_to_bytes(&tokenizer_path)?;
+    let config_file = read_file_to_bytes(&config_path)?;
+    let special_tokens_map_file = read_file_to_bytes(&special_tokens_map_path)?;
+
+    let tokenizer_config_file = read_file_to_bytes(&tokenizer_config_path)?;
+    let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
+
+    let tokenizer_files: TokenizerFiles = TokenizerFiles {
+        tokenizer_file,
+        config_file,
+        special_tokens_map_file,
+        tokenizer_config_file,
+    };
+
+    // Create the UserDefinedEmbeddingModel
+    let user_model =
+        UserDefinedEmbeddingModel::new(onnx_bytes, tokenizer_files).with_pooling(Pooling::Mean); // Optional: Set pooling strategy
+
+    // Initialize the TextEmbedding model with custom options
+    let embedding_model =
+        TextEmbedding::try_new_from_user_defined(user_model, InitOptionsUserDefined::default())?;
 
     // Initialize Qdrant client
     let qdrant_client = Qdrant::from_url("http://localhost:6334").build()?;
@@ -64,8 +99,6 @@ async fn main() -> Result<()> {
             .await?;
         println!("created collection '{}' in Qdrant", COLLECTION_NAME);
     }
-
-    let tokenizer = Tokenizer::from_file("all-MiniLM-L6-v2-tokenizer.json").unwrap();
 
     // Create app state
     let state = Arc::new(AppState {
