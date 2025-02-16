@@ -241,3 +241,55 @@ Would you like me to:
 2. Implement batch processing for multiple tips?
 3. Add configuration options for the Qdrant connection?
 4. Add any other features?
+
+--------------------------------------------------
+
+Question: With all-MiniLM-L6-v2, how do I know in advance that the number of tokens of a piece of text will be less than 256?
+
+Answer from ChatGPT with search and reasoning:
+
+You can check the token count before embedding by using the same tokenizer that the model uses. For example, with the Hugging Face tokenizer you can do:
+
+```python
+from transformers import AutoTokenizer
+tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+tokens = tokenizer.tokenize("Your long text here")
+print("Number of tokens:", len(tokens))
+```
+
+This tells you if your text is within the 256-token limit. If the count exceeds 256, you'll know to truncate or chunk your text accordingly.  
+
+https://sbert.net/examples/applications/computing-embeddings/README.html
+https://github.com/UKPLab/sentence-transformers/issues/2183
+
+----------------------------------------------------------
+Requst: Please translate the above code into rust.
+
+Answer from ChatGPT with search and reasoning:
+
+Below is an example of how you can do this in Rust using the Hugging Face [tokenizers](https://github.com/huggingface/tokenizers) library. Note that you’ll need to have a local copy of the tokenizer (e.g. a JSON file for all‑MiniLM‑L6‑v2) downloaded from Hugging Face.
+
+```rust
+use tokenizers::Tokenizer;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load the tokenizer from a local JSON file.
+    // (Make sure "all-MiniLM-L6-v2-tokenizer.json" is available locally.)
+    let tokenizer = Tokenizer::from_file("all-MiniLM-L6-v2-tokenizer.json")?;
+    
+    let text = "Your long text here";
+    // Encode the text; `true` indicates that special tokens are added.
+    let encoding = tokenizer.encode(text, true)?;
+    
+    // Get the token IDs and count them.
+    let num_tokens = encoding.get_ids().len();
+    println!("Number of tokens: {}", num_tokens);
+    
+    Ok(())
+}
+```
+
+This Rust code mimics the Python snippet by loading the tokenizer, encoding your text, and printing the number of tokens. If the number exceeds 256, you’ll know that you need to truncate or split the text.  
+
+https://sbert.net/examples/applications/computing-embeddings/README.html
+https://github.com/UKPLab/sentence-transformers/issues/2183
