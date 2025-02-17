@@ -1,25 +1,19 @@
 mod embedding;
+mod embedding_model_factory;
+mod qdrant_util;
 mod splitter;
+mod tokenizer_factory;
 mod vector_mean;
 
 use anyhow::Result;
 use axum::{extract::State, routing::post, Json, Router};
-use qdrant_client::qdrant::{
-    CreateCollectionBuilder, Distance, ScalarQuantizationBuilder, SearchParamsBuilder,
-    SearchPointsBuilder, UpsertPointsBuilder, VectorParamsBuilder,
-};
-use qdrant_client::{qdrant::PointStruct, Payload, Qdrant};
+use dotenv::dotenv;
+use qdrant_client::qdrant::{Distance, PointStruct};
+use qdrant_client::{Payload, Qdrant};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::env;
 use std::sync::Arc;
-use tokenizers::tokenizer::Tokenizer;
-
-use std::path::PathBuf;
-
-use fastembed::{
-    read_file_to_bytes, InitOptionsUserDefined, Pooling, TextEmbedding, TokenizerFiles,
-    UserDefinedEmbeddingModel,
-};
 
 const COLLECTION_NAME: &str = "tips";
 const VECTOR_SIZE: u64 = 384; // all-MiniLM-L6-v2 embedding Size: 384 dimensions
@@ -31,7 +25,7 @@ struct AddTipRequest {
 }
 
 #[derive(Serialize)]
-struct SearchResponse {
+struct SearchResult {
     text: String,
     score: f32,
 }
@@ -39,72 +33,27 @@ struct SearchResponse {
 // App state
 struct AppState {
     qdrant_client: Qdrant,
-    embedding_model: TextEmbedding,
-    tokenizer: Tokenizer,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    dotenv().ok();
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
-    let base_path = PathBuf::from("all-MiniLM-L6-v2");
-    // Define paths to your local files
-    let onnx_path = base_path.join("onnx").join("model.onnx");
-    let tokenizer_path = base_path.join("tokenizer.json");
-    let config_path = base_path.join("config.json");
-    let special_tokens_map_path = base_path.join("special_tokens_map.json");
-    let tokenizer_config_path = base_path.join("tokenizer_config.json");
-
-    // Read the ONNX model file into bytes
-    let onnx_bytes = read_file_to_bytes(&onnx_path)?;
-    let tokenizer_file = read_file_to_bytes(&tokenizer_path)?;
-    let config_file = read_file_to_bytes(&config_path)?;
-    let special_tokens_map_file = read_file_to_bytes(&special_tokens_map_path)?;
-    let tokenizer_config_file = read_file_to_bytes(&tokenizer_config_path)?;
-    let tokenizer = Tokenizer::from_file(tokenizer_path).unwrap();
-
-    let tokenizer_files: TokenizerFiles = TokenizerFiles {
-        tokenizer_file,
-        config_file,
-        special_tokens_map_file,
-        tokenizer_config_file,
-    };
-
-    // Create the UserDefinedEmbeddingModel
-    let user_model =
-        UserDefinedEmbeddingModel::new(onnx_bytes, tokenizer_files).with_pooling(Pooling::Mean); // Optional: Set pooling strategy
-
-    // Initialize the TextEmbedding model with custom options
-    let embedding_model =
-        TextEmbedding::try_new_from_user_defined(user_model, InitOptionsUserDefined::default())?;
-
     // Initialize Qdrant client
-    let qdrant_client = Qdrant::from_url("http://localhost:6334").build()?;
+    let qdrant_client = Qdrant::from_url(&env::var("QDRANT_URL").unwrap()).build()?;
 
-    let exists = qdrant_client.collection_exists(COLLECTION_NAME).await?;
-    if exists {
-        println!(
-            "'{}' collection already exists in Qdrant; do not create",
-            COLLECTION_NAME
-        );
-    } else {
-        qdrant_client
-            .create_collection(
-                CreateCollectionBuilder::new(COLLECTION_NAME)
-                    .vectors_config(VectorParamsBuilder::new(VECTOR_SIZE, Distance::Cosine))
-                    .quantization_config(ScalarQuantizationBuilder::default()),
-            )
-            .await?;
-        println!("created collection '{}' in Qdrant", COLLECTION_NAME);
-    }
+    qdrant_util::create_collection_if_not_exists(
+        &qdrant_client,
+        COLLECTION_NAME,
+        VECTOR_SIZE,
+        Distance::Cosine,
+    )
+    .await?;
 
     // Create app state
-    let state = Arc::new(AppState {
-        qdrant_client,
-        embedding_model,
-        tokenizer,
-    });
+    let state = Arc::new(AppState { qdrant_client });
 
     // Build router
     let app = Router::new()
@@ -112,9 +61,10 @@ async fn main() -> Result<()> {
         .route("/search", post(search))
         .with_state(state);
 
+    let server_url = env::var("SERVER_URL").unwrap();
     // Start server
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    println!("Server running on http://0.0.0.0:3000");
+    let listener = tokio::net::TcpListener::bind(&server_url).await?;
+    println!("Server running on {}", server_url);
     axum::serve(listener, app).await?;
 
     Ok(())
@@ -125,11 +75,7 @@ async fn add_tip(
     State(state): State<Arc<AppState>>,
     Json(add_tip_request): Json<AddTipRequest>,
 ) -> Json<serde_json::Value> {
-    let embedding_vec = embedding::embed(
-        &add_tip_request.text,
-        &state.embedding_model,
-        &state.tokenizer,
-    );
+    let embedding_vec = embedding::embed(&add_tip_request.text);
     let payload: Payload = json!(add_tip_request).try_into().unwrap();
     let points = vec![PointStruct::new(
         uuid::Uuid::new_v4().to_string(),
@@ -137,11 +83,7 @@ async fn add_tip(
         payload,
     )];
 
-    match state
-        .qdrant_client
-        .upsert_points(UpsertPointsBuilder::new(COLLECTION_NAME, points))
-        .await
-    {
+    match qdrant_util::upsert_points(&state.qdrant_client, COLLECTION_NAME, points).await {
         Ok(_) => Json(json!({ "status": "success" })),
         Err(e) => Json(json!({
             "status": "error",
@@ -154,26 +96,21 @@ async fn add_tip(
 async fn search(
     State(state): State<Arc<AppState>>,
     Json(add_tip_request): Json<AddTipRequest>,
-) -> Json<Vec<SearchResponse>> {
-    let embedding_vec = embedding::embed(
-        &add_tip_request.text,
-        &state.embedding_model,
-        &state.tokenizer,
-    );
+) -> Json<Vec<SearchResult>> {
+    let embedding_vec = embedding::embed(&add_tip_request.text);
     // Search in Qdrant
-    let search_result = state
-        .qdrant_client
-        .search_points(
-            SearchPointsBuilder::new(COLLECTION_NAME, embedding_vec, VECTOR_SIZE)
-                .with_payload(true)
-                .params(SearchParamsBuilder::default().exact(true))
-                .limit(1),
-        )
-        .await;
+    let search_result = qdrant_util::search_points(
+        &state.qdrant_client,
+        COLLECTION_NAME,
+        embedding_vec,
+        VECTOR_SIZE,
+        1,
+    )
+    .await;
 
     match search_result {
         Ok(results) => {
-            let responses: Vec<SearchResponse> = results
+            let responses: Vec<SearchResult> = results
                 .result
                 .into_iter()
                 .map(|scored_point| {
@@ -183,7 +120,7 @@ async fn search(
                         .and_then(|v| v.as_str())
                         .unwrap_or(&"".to_owned())
                         .to_string();
-                    SearchResponse {
+                    SearchResult {
                         text,
                         score: scored_point.score,
                     }
@@ -191,6 +128,9 @@ async fn search(
                 .collect();
             Json(responses)
         }
-        Err(_) => Json(vec![]),
+        Err(_) => Json(vec![SearchResult {
+            text: "No clue".to_owned(),
+            score: 0 as f32,
+        }]),
     }
 }
