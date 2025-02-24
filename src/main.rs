@@ -1,3 +1,4 @@
+mod all_minilm_l6_v2;
 mod embedding;
 mod qdrant_util;
 mod splitter;
@@ -20,12 +21,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokenizers::tokenizer::Tokenizer;
 
-const COLLECTION_NAME: &str = "tips";
-const VECTOR_SIZE: u64 = 384; // all-MiniLM-L6-v2 embedding Size: 384 dimensions
-
 // Request/Response structs
 #[derive(Deserialize, Serialize)]
-struct AddTipRequest {
+struct AddDocRequest {
     text: String,
 }
 
@@ -57,8 +55,8 @@ async fn main() -> Result<()> {
 
     qdrant_util::create_collection_if_not_exists(
         &qdrant_client,
-        COLLECTION_NAME,
-        VECTOR_SIZE,
+        all_minilm_l6_v2::COLLECTION_NAME,
+        all_minilm_l6_v2::VECTOR_SIZE,
         Distance::Cosine,
     )
     .await?;
@@ -75,7 +73,7 @@ async fn main() -> Result<()> {
 
     // Build router
     let app = Router::new()
-        .route("/tip", post(add_tip))
+        .route("/doc", post(add_doc))
         .route("/search", post(search))
         .with_state(state);
 
@@ -88,24 +86,31 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-// Handler for adding tips
-async fn add_tip(
+// Handler for adding docs
+async fn add_doc(
     State(state): State<Arc<AppState>>,
-    Json(add_tip_request): Json<AddTipRequest>,
+    Json(add_doc_request): Json<AddDocRequest>,
 ) -> Json<serde_json::Value> {
     let embedding_vec = embedding::embed(
-        &add_tip_request.text,
+        &add_doc_request.text,
         &state.embedding_model,
         &state.tokenizer,
+        all_minilm_l6_v2::MAX_TOKENS_PER_CHUNK,
     );
-    let payload: Payload = json!(add_tip_request).try_into().unwrap();
+    let payload: Payload = json!(add_doc_request).try_into().unwrap();
     let points = vec![PointStruct::new(
         uuid::Uuid::new_v4().to_string(),
         embedding_vec,
         payload,
     )];
 
-    match qdrant_util::upsert_points(&state.qdrant_client, COLLECTION_NAME, points).await {
+    match qdrant_util::upsert_points(
+        &state.qdrant_client,
+        all_minilm_l6_v2::COLLECTION_NAME,
+        points,
+    )
+    .await
+    {
         Ok(_) => Json(json!({ "status": "success" })),
         Err(e) => Json(json!({
             "status": "error",
@@ -114,22 +119,23 @@ async fn add_tip(
     }
 }
 
-// Handler for searching tips
+// Handler for searching docs
 async fn search(
     State(state): State<Arc<AppState>>,
-    Json(add_tip_request): Json<AddTipRequest>,
+    Json(add_doc_request): Json<AddDocRequest>,
 ) -> Json<Vec<SearchResult>> {
     let embedding_vec = embedding::embed(
-        &add_tip_request.text,
+        &add_doc_request.text,
         &state.embedding_model,
         &state.tokenizer,
+        all_minilm_l6_v2::MAX_TOKENS_PER_CHUNK,
     );
     // Search in Qdrant
     let search_result = qdrant_util::search_points(
         &state.qdrant_client,
-        COLLECTION_NAME,
+        all_minilm_l6_v2::COLLECTION_NAME,
         embedding_vec,
-        VECTOR_SIZE,
+        all_minilm_l6_v2::VECTOR_SIZE,
         1,
     )
     .await;
@@ -162,7 +168,7 @@ async fn search(
 }
 
 fn get_model() -> Result<TextEmbedding> {
-    let base_path = PathBuf::from("all-MiniLM-L6-v2");
+    let base_path = PathBuf::from("src/all_minilm_l6_v2/models");
     let onnx_path = base_path.join("onnx").join("model.onnx");
     let tokenizer_path = base_path.join("tokenizer.json");
     let config_path = base_path.join("config.json");
@@ -192,7 +198,7 @@ fn get_model() -> Result<TextEmbedding> {
 }
 
 fn get_tokenizer() -> Tokenizer {
-    let base_path = PathBuf::from("all-MiniLM-L6-v2");
+    let base_path = PathBuf::from("src/all_minilm_l6_v2/models");
     let tokenizer_path = base_path.join("tokenizer.json");
     Tokenizer::from_file(tokenizer_path).unwrap()
 }

@@ -4,8 +4,13 @@ use anyhow::Result;
 use fastembed::TextEmbedding;
 use tokenizers::tokenizer::Tokenizer;
 
-pub fn embed(text: &str, embedding_model: &TextEmbedding, tokenizer: &Tokenizer) -> Vec<f32> {
-    let chunks: Vec<String> = splitter::split(text, tokenizer);
+pub fn embed(
+    text: &str,
+    embedding_model: &TextEmbedding,
+    tokenizer: &Tokenizer,
+    max_tokens_per_chunk: usize,
+) -> Vec<f32> {
+    let chunks: Vec<String> = splitter::split(text, tokenizer, max_tokens_per_chunk);
     let embedding: Vec<Vec<f32>> = chunks
         .iter()
         .map(|s| embed_a_chunk(s, embedding_model).unwrap())

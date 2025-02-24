@@ -1,5 +1,5 @@
 #!/bin/bash
 
-curl -X POST http://localhost:3000/tip \
+curl -X POST http://localhost:3000/doc \
   -H "Content-Type: application/json" \
   -d '{"text": "Mars is the fourth planet from the sun and is known for its red color. It has two moons, Phobos and Deimos. \n Moons: Phobos and Deimos are thought to be captured asteroids. \n Atmosphere: Mars'\''s atmosphere is made up of mostly carbon dioxide, with small amounts of argon, nitrogen, oxygen, and water vapor. It'\''s very thin, with air pressure less than 1% of Earth'\''s. \n Ice: Mars has thick ice caps at both poles, and more ice is likely to be locked away in the deep subsurface. \n Dust storms: Mars can have huge dust storms that last for months and can cover the entire planet. \n Distance from the sun: Mars is 227,900,000 km from the sun.\n Orbital period: Mars'\''s orbital period is 687 days, which is longer than Earth'\''s year because Mars is farther from the sun. \n Name: Mars is named after the Roman God of war. \n Surface color: Mars is red because of the large amount of iron oxide (rust) in its rocks and soil."}'
